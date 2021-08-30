@@ -1,0 +1,271 @@
+---
+title: "testing"
+author: "Daniel Kerstan"
+date: "8/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(jsonlite)
+library(httr)
+library(dplyr)
+library(tidyverse)
+library(combinat)
+library(gtools)
+library(kableExtra)
+```
+
+
+set up variables
+```{r}
+spending_limit <- 160
+
+gk_num <- 1
+def_num <- 2
+mid_num <- 2
+fwd_num <- 1
+
+team_total_num = sum(gk_num, def_num, mid_num, fwd_num)
+
+same_club_num <- 3
+```
+
+# Rules:
+## can only have `r gk_num` gk, `r def_num` def, `r mid_num` mid, and `r fwd_num` fwd
+## no more than `r same_club_num` from the same club
+## only have $`r spending_limit` to spend
+
+
+```{r}
+df <- tribble(~name, ~points, ~position, ~ club, ~price,
+              "A", 45, "gk", "blue", 30,
+              "B", 66, "gk", "red", 50, 
+              "C", 21, "gk", "yellow", 18,
+              "D", 38, "mid", "blue", 24,
+              "E", 23, "mid", "red", 17,
+              "F", 5, "mid", "yellow", 10,
+              "G", 11, "mid", "blue", 10, 
+              "H", 30, "mid", "red", 15,
+              "I", 55, "def", "yellow", 44,
+              "J", 40, "def", "blue", 27,
+              "K", 36, "def", "red", 22, 
+              "L", 55, "def", "yellow", 47, 
+              "M", 0, "fwd", "blue", 5,
+              "N", 27, "fwd", "red", 20, 
+              "O", 18, "fwd", "yellow", 13, 
+              "P", 48, "fwd", "blue", 35, 
+              "Q", 60, "mid", "yellow", 48, 
+              "R", 41, "gk", "blue", 30, 
+              "S", 33, "def", "blue", 17)
+
+df %>% 
+  kable() %>% 
+  kable_paper(lightable_options = "striped") %>% 
+  kable_styling(full_width = FALSE)
+
+
+```
+
+
+```{r}
+team_bonus_df <- tribble(~club, ~defender_bonus, ~fwd_bonus, ~gk_bonus,
+                         "blue", 10, 5, 8,
+                         "red", 0, 13, 7,
+                         "yellow", 5, 8, 1)
+
+team_bonus_df %>% 
+  kable() %>% 
+  kable_paper(lightable_options = "striped") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+
+# 1
+Setting up associations to filter by
+```{r}
+name_club <- df %>% 
+  select(name, club)
+
+name_points <- df %>% 
+  select(name, points)
+
+name_price <- df %>% 
+  select(name, price)
+  
+```
+
+full list of combinations based on player name
+```{r}
+analysis <- as.data.frame(combinations(n = length(df$name), r = team_total_num, v = df$name))
+
+team_seq <- seq(from = 1, to = length(analysis$V1))
+
+analysis <- analysis %>% 
+  mutate(team = team_seq)
+
+# all combinations have now been given a team number
+```
+
+
+
+
+
+# 2
+second phase: `pivot_longer` and left join player position by name
+```{r}
+analysis_2 <- pivot_longer(data = analysis, cols = -"team", names_to = "spot", values_to = "name")
+
+```
+
+```{r}
+player_position <- df %>% 
+  select(name, position)
+
+analysis_3 <- left_join(analysis_2, player_position, "name")
+```
+
+
+```{r, eval=FALSE}
+# an interesting visualization of the combinations but not helpful in computation
+analysis_3_wider <- pivot_wider(data = analysis_3, id_cols = team, names_from = position, values_from = name)
+```
+counting how many of each position are on each team
+```{r}
+analysis_4 <- analysis_3 %>% 
+  count(team, position)
+```
+
+```{r}
+analysis_4_wider <- analysis_4 %>% 
+  pivot_wider(team, names_from = position, values_from = n)
+```
+filter only those that satisfy the position requirements
+```{r}
+team_sat <- analysis_4_wider %>% 
+  filter(gk == gk_num & mid == mid_num & def == def_num & fwd == fwd_num)
+```
+cutting down the previous list (analysis_3) by the position filter by a left join
+```{r}
+full_sat <- left_join(team_sat, analysis_3, by = "team")
+```
+
+```{r}
+full_sat_wider <- pivot_wider(data = full_sat, id_cols = team, names_from = spot, values_from = name)
+```
+now have a filtered df containing team, spot, name, and position that meets the position requirement
+```{r}
+full_sat <- full_sat %>% 
+  select(team, spot, name, position)
+```
+
+
+
+# 3
+setting up to filter by club to satisfy club player limit
+```{r}
+full_sat_club <- left_join(full_sat, name_club, by = "name")
+```
+counting how many players per team per club
+```{r}
+analysis_5 <- full_sat_club %>% 
+  count(team, club)
+```
+
+```{r}
+analysis_5_wider <- pivot_wider(data = analysis_5, names_from = club, values_from = n)
+```
+filter only those combinations (teams) that satisfy the club requirements
+```{r}
+satisfied_almost <- analysis_5_wider %>% 
+  filter(blue <= same_club_num & red <= same_club_num & yellow <= same_club_num) %>% 
+  select(team)
+# 1 column data frame consisting of just team number that satisfies
+```
+left join to get updated satisfied df of teams
+```{r}
+satisfied <- left_join(satisfied_almost, full_sat_club, by = "team")
+```
+
+
+# 4
+adding price
+```{r}
+price_considered <- left_join(satisfied, name_price, by = "name")
+```
+sum the price per team
+```{r}
+sum_price_team <- price_considered %>% 
+  group_by(team) %>% 
+  summarize(total_price = sum(price))
+```
+filter by price limit of $`r spending_limit`
+```{r}
+price_almost_sat <- sum_price_team %>% 
+  filter(total_price <= spending_limit)
+```
+
+```{r}
+price_sat <- left_join(price_almost_sat, satisfied, by = "team")
+```
+
+
+
+# 5
+adding up the points
+
+```{r}
+points_calc <- left_join(price_sat, name_points, by = "name")
+```
+
+add the club bonus
+```{r}
+points_bonus <- left_join(points_calc, team_bonus_df, by = "club") %>% 
+  mutate(bonus = case_when(
+    position == "gk" ~ (points + gk_bonus),
+    position == "def" ~ (points + defender_bonus),
+    position == "fwd" ~ (points + fwd_bonus),
+    TRUE ~ points
+  ))
+
+final_points <- points_bonus %>% 
+  select(team, spot, name, position, club, bonus)
+```
+get the sum of all points per team
+```{r}
+analysis_final <- final_points %>% 
+  group_by(team) %>% 
+  summarize(sum = sum(bonus))
+```
+establish what the max amount is and find team that has it
+```{r}
+max_points_withbonus <- max(analysis_final$sum)
+
+team_win_final <- analysis_final %>% 
+  filter(sum == max_points_withbonus)
+```
+show the winning roster
+```{r}
+winning_roster <- left_join(team_win_final, analysis_2, by = "team")
+
+winning_roster <- winning_roster %>% 
+  select(name)
+
+winning_roster <- left_join(winning_roster, df)
+
+with_total_price <- left_join(team_win_final, price_almost_sat, by = "team")
+
+```
+
+
+# winning roster is `r winning_roster$name` with a combined score of `r max_points_withbonus`, and a total cost of $`r with_total_price$total_price`
+
+
+```{r}
+winning_roster %>% 
+  kable() %>% 
+  kable_paper(lightable_options = "striped") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+

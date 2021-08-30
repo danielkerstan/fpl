@@ -1,0 +1,110 @@
+---
+title: "fpl data"
+author: "Daniel Kerstan"
+date: "8/28/2021"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(jsonlite)
+library(httr)
+library(dplyr)
+library(tidyverse)
+```
+
+
+Importing the data
+```{r}
+
+data <- fromJSON("https://fantasy.premierleague.com/api/bootstrap-static/")
+
+```
+
+
+building the `full` data frame (this will be the main data frame)
+```{r}
+full <- data$elements
+
+element_types <- data$element_types
+
+#joining the element_types data frame by "position"
+element_types_cols <- vector(mode = "character", length = length(element_types))
+
+
+for (i in seq_along(element_types)) {
+  name = paste0("position_", names(element_types[i]))
+  element_types_cols[i] <- name
+}
+
+colnames(element_types) <- element_types_cols
+
+
+
+
+full <- rename(.data = full, position_id = element_type)
+
+full <- left_join(full, element_types, by = "position_id")
+
+teams <- data$teams
+
+#adding the teams data frame
+full <- full %>% 
+  rename(team_id = team)
+
+############ new names for columns
+teams_cols <- vector(mode = "character", length = length(teams))
+
+
+for (i in seq_along(teams)) {
+  name = paste0("team_", names(teams[i]))
+  teams_cols[i] <- name
+}
+
+
+colnames(teams) <- teams_cols #change col names
+############
+
+
+
+full <- left_join(full, teams, by = "team_id")
+
+
+```
+
+
+```{r}
+teams_sub <- teams %>% 
+  select(team_name, team_strength_overall_home, team_strength_overall_away, team_strength_attack_home, team_strength_attack_away, team_strength_defence_home, team_strength_defence_away)
+
+```
+
+plotting team info
+```{r}
+#teams_sub_longer <- pivot_longer(data = teams_sub, cols = -team_name,  names_to = "catagory", values_to = "value")
+
+#ggplot(data = teams_sub_longer, aes(x = value, y = catagory)) +
+  #geom_col() +
+  #facet_wrap(~team_name)
+```
+
+names and teams
+
+```{r}
+names_and_teams <- full %>% 
+  select(first_name, second_name, position_plural_name, team_name)
+
+```
+
+Goalkeepers
+
+```{r}
+keepers <- full %>% 
+  filter(position_id == 1)
+```
+
+
+
+
+
+
