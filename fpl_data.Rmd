@@ -1,5 +1,5 @@
 ---
-title: "fpl data"
+title: "fantasy premier league data"
 author: "Daniel Kerstan"
 date: "8/28/2021"
 output: html_document
